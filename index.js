@@ -6,25 +6,38 @@ app.use(express.json());
 
 // ⚠️ Variables de configuración
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || "AIzaSyC7i_KURfsl34xGdJ7O9JIxri-CFtNhB54";
-const YOUR_CHANNEL_ID = "UCKCBWFnPAzrUX16Nw-MES0Q"; // Tu ID de canal (UC...)
+const YOUR_CHANNEL_ID = "UCKCBWFnPAzrUX16Nw-MES0Q"; // Tu ID de canal
 
 /**
- * Convierte un handle (ej. @ChrisXTM) o un ID directo en un Channel ID de YouTube (UC...)
+ * Extrae y limpia el ID de Canal (UC...) o Handle (@...) de cualquier texto o URL pegada
  */
-async function getChannelIdFromHandle(handle) {
-    const cleanHandle = handle.trim();
+async function getChannelIdFromHandle(rawInput) {
+    if (!rawInput) return null;
 
-    // 1. Si el usuario ya ingresó un Channel ID válido (empieza por UC y tiene 24 caracteres)
-    if (cleanHandle.startsWith('UC') && cleanHandle.length === 24) {
-        console.log(`[DEBUG] Se ingresó un Channel ID directo: ${cleanHandle}`);
-        return cleanHandle;
+    let cleanInput = decodeURIComponent(rawInput).trim();
+
+    // 1. EXTRAER ID DIRECTO (UC... de 24 caracteres), incluso si viene dentro de una URL o texto sucio
+    const ucMatch = cleanInput.match(/UC[a-zA-Z0-9_-]{22}/);
+    if (ucMatch) {
+        const foundUcId = ucMatch[0];
+        console.log(`[DEBUG] ID de Canal (UC) detectado y limpiado: ${foundUcId}`);
+        return foundUcId;
     }
 
-    // 2. La API de YouTube exige obligatoriamente el '@' al consultar por handle
-    const formattedHandle = cleanHandle.startsWith('@') ? cleanHandle : `@${cleanHandle}`;
-    
+    // 2. EXTRAER HANDLE (@usuario), incluso si viene dentro de una URL
+    const handleMatch = cleanInput.match(/@[a-zA-Z0-9._-]+/);
+    let formattedHandle = "";
+
+    if (handleMatch) {
+        formattedHandle = handleMatch[0];
+    } else {
+        // Si ingresaron un texto plano sin @ ni UC, le agregamos el @
+        cleanInput = cleanInput.split(']')[0].split(' ')[0]; // Limpia corchetes o espacios extra
+        formattedHandle = cleanInput.startsWith('@') ? cleanInput : `@${cleanInput}`;
+    }
+
     try {
-        console.log(`[DEBUG] Consultando API de YouTube para handle: ${formattedHandle}`);
+        console.log(`[DEBUG] Consultando API de YouTube para handle limpiado: ${formattedHandle}`);
         
         const response = await axios.get('https://www.googleapis.com/youtube/v3/channels', {
             params: {
@@ -35,31 +48,24 @@ async function getChannelIdFromHandle(handle) {
         });
 
         const items = response.data.items || [];
-        console.log(`[DEBUG] YouTube respondió OK. Canales encontrados: ${items.length}`);
+        console.log(`[DEBUG] Canales encontrados para ${formattedHandle}: ${items.length}`);
 
         if (items.length > 0) {
             const channelId = items[0].id;
-            console.log(`[DEBUG] Channel ID encontrado exitosamente: ${channelId}`);
+            console.log(`[DEBUG] Channel ID encontrado: ${channelId}`);
             return channelId;
         } else {
-            console.log(`[WARN] No se encontró ningún canal vinculado al handle: ${formattedHandle}`);
+            console.log(`[WARN] No se encontró canal para el handle: ${formattedHandle}`);
         }
     } catch (error) {
-        console.error('[ERROR] Falló la búsqueda del handle en la API de YouTube:');
-        if (error.response) {
-            console.error(`  Status: ${error.response.status}`);
-            console.error(`  Detalle: ${JSON.stringify(error.response.data)}`);
-        } else {
-            console.error(`  Mensaje: ${error.message}`);
-        }
+        console.error('[ERROR] Error al consultar la API de YouTube:', error.response?.data || error.message);
     }
     
     return null;
 }
 
 /**
- * Endpoint de Verificación llamado por Roblox o el Navegador
- * Ejemplo: GET /verify-subscription?username=@usuario
+ * Endpoint de Verificación
  */
 app.get('/verify-subscription', async (req, res) => {
     const { username } = req.query;
@@ -72,20 +78,20 @@ app.get('/verify-subscription', async (req, res) => {
     }
 
     try {
-        console.log(`\n--- NUEVA PETICIÓN DE VERIFICACIÓN: ${username} ---`);
+        console.log(`\n--- NUEVA PETICIÓN RECIBIDA: ${username} ---`);
 
-        // 1. Obtener o validar el Channel ID del usuario
+        // 1. Obtener y limpiar el Channel ID del usuario
         const userChannelId = await getChannelIdFromHandle(username);
         
         if (!userChannelId) {
             return res.json({ 
                 success: false, 
-                message: 'No se encontró el canal de YouTube. Verifica que el handle sea correcto (ejemplo: @ChrisXTM).' 
+                message: 'No se encontró el canal de YouTube. Verifica el handle o ID ingresado.' 
             });
         }
 
-        // 2. Consultar si ese canal está suscrito a TU canal
-        console.log(`[DEBUG] Verificando si ${userChannelId} está suscrito a ${YOUR_CHANNEL_ID}...`);
+        // 2. Verificar suscripción en la API de YouTube
+        console.log(`[DEBUG] Verificando si ${userChannelId} está suscrito a tu canal (${YOUR_CHANNEL_ID})...`);
         
         const subCheck = await axios.get('https://www.googleapis.com/youtube/v3/subscriptions', {
             params: {
@@ -99,13 +105,13 @@ app.get('/verify-subscription', async (req, res) => {
         const isSubscribed = subCheck.data.items && subCheck.data.items.length > 0;
 
         if (isSubscribed) {
-            console.log(`✅ [EXITO] ¡Suscripción confirmada para ${username}!`);
+            console.log(`✅ [EXITO] ¡Suscripción confirmada!`);
             return res.json({ 
                 success: true, 
                 message: '¡Suscripción confirmada!' 
             });
         } else {
-            console.log(`❌ [FALLO] No se detectó suscripción pública para ${username}.`);
+            console.log(`❌ [FALLO] No se detectó suscripción pública.`);
             return res.json({ 
                 success: false, 
                 message: 'No se detectó tu suscripción. Asegúrate de estar suscrito y de tener tus suscripciones en modo PÚBLICO.' 
@@ -113,14 +119,7 @@ app.get('/verify-subscription', async (req, res) => {
         }
 
     } catch (error) {
-        console.error('💥 [ERROR CRÍTICO] En el proceso de verificación:');
-        if (error.response) {
-            console.error(`  Status: ${error.response.status}`);
-            console.error(`  Data: ${JSON.stringify(error.response.data)}`);
-        } else {
-            console.error(`  Mensaje: ${error.message}`);
-        }
-
+        console.error('💥 [ERROR CRÍTICO]:', error.response?.data || error.message);
         return res.status(500).json({ 
             success: false, 
             message: 'Error interno al consultar la API de YouTube.' 
@@ -130,5 +129,5 @@ app.get('/verify-subscription', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor activo y escuchando en el puerto ${PORT}`);
+    console.log(`🚀 Servidor activo en el puerto ${PORT}`);
 });
