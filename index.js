@@ -5,7 +5,7 @@ const PORT = process.env.PORT || 3000;
 // Configuración de tu repositorio
 const GITHUB_OWNER = "ChrisXTM";
 const GITHUB_REPO = "Script";
-const FILE_PATH = "Update_HeroesBG.lua"; // Ruta de tu script dentro del repo
+const FILE_PATH = "LoadHeroesBG.lua"; // Ruta de tu script dentro del repo
 const BRANCH = "main";
 
 app.get("/get-script", async (req, res) => {
