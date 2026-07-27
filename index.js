@@ -4,7 +4,7 @@ const PORT = process.env.PORT || 3000;
 
 // Configuración de tu repositorio
 const GITHUB_OWNER = "ChrisXTM";
-const GITHUB_REPO = "Script";
+const GITHUB_REPO = "Privacy";
 const FILE_PATH = "LoadHeroesBG.lua"; // Ruta de tu script dentro del repo
 const BRANCH = "main";
 
